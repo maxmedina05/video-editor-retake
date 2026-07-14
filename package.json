@@ -1,0 +1,38 @@
+{
+  "name": "clean-video",
+  "version": "0.1.0",
+  "description": "Local, open-source video cleanup pipeline (Loom-replacement post-processing): denoise, silence cutting, filler-word removal, auto captions.",
+  "type": "module",
+  "bin": {
+    "clean-video": "dist/cli/index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:ui": "npm --prefix web-ui run build",
+    "build:all": "npm run build && npm run build:ui",
+    "dev": "tsx src/cli/index.ts",
+    "fetch-binaries": "tsx scripts/fetch-binaries.ts",
+    "dev:ui": "concurrently -k \"npm run dev -- ui sample-videos/demo.mp4 --no-open --port 5199\" \"npm --prefix web-ui run dev\"",
+    "ui": "node dist/cli/index.js ui",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "execa": "^9.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "concurrently": "^10.0.3",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

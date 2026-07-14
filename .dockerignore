@@ -1,0 +1,21 @@
+# Build artifacts + deps (rebuilt inside the image)
+node_modules
+dist
+web-ui/node_modules
+web-ui/dist
+
+# Vendored host binaries (linux binary is fetched inside the image)
+bin
+
+# Sample media + generated outputs
+sample-videos
+*.cleaned.mp4
+*.cleaned.srt
+*.cleaned.vtt
+*.cutplan.json
+
+# Misc
+.git
+.DS_Store
+*.log
+scratchpad

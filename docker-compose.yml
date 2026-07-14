@@ -1,0 +1,35 @@
+# clean-video — personal/localhost use. The server binds 0.0.0.0 *inside* the
+# container, but the port is published only to 127.0.0.1 on the host, so it is
+# not reachable from your LAN. The Origin check still guards against foreign
+# web pages driving the API.
+services:
+  clean-video:
+    build: .
+    image: clean-video:latest
+    # Publish to loopback ONLY. Do not change to 0.0.0.0 unless you understand
+    # the exposure (there is no authentication).
+    ports:
+      - "127.0.0.1:5199:5199"
+    volumes:
+      # Your videos. Browsed via the in-app file browser (--media-root /videos).
+      # Read-write: rendered *.cleaned.mp4 / .srt / .vtt are written alongside
+      # the source. Append :ro if you only want to analyze, not render.
+      - ./sample-videos:/videos
+      # Whisper models — persisted so the first-run download happens once.
+      - clean-video-models:/models
+      # Recents / config (XDG_CONFIG_HOME=/config inside the container).
+      - clean-video-config:/config
+      # Analysis cache (XDG_CACHE_HOME=/cache) — persisted so reopening a file
+      # is instant across restarts. Denoised WAVs here are LRU-capped (~2GB;
+      # override with CLEAN_VIDEO_CACHE_MAX_BYTES).
+      - clean-video-cache:/cache
+    # Override the model with e.g. WHISPER_MODEL=small.en
+    # environment:
+    #   WHISPER_MODEL: base.en
+    #   CLEAN_VIDEO_CACHE_MAX_BYTES: "2147483648"
+    restart: unless-stopped
+
+volumes:
+  clean-video-models:
+  clean-video-config:
+  clean-video-cache:

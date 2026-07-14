@@ -1,0 +1,14 @@
+node_modules/
+dist/
+sample-videos/
+*.log
+
+# vendored binaries (restore with: npm run fetch-binaries)
+bin/
+
+# generated outputs
+*.cleaned.mp4
+*.cleaned.srt
+*.cleaned.vtt
+*.cutplan.json
+.DS_Store
