@@ -27,6 +27,19 @@ export function mergedEnabledRanges(cuts: EditorCut[], mergeGap = 0.02): Range[]
   return out;
 }
 
+/**
+ * Map a position on the ORIGINAL timeline to the edited (post-cut) timeline:
+ * t minus everything the merged, sorted cut ranges remove before t.
+ */
+export function toEditedTime(t: number, ranges: Range[]): number {
+  let removed = 0;
+  for (const r of ranges) {
+    if (r.start >= t) break;
+    removed += Math.min(r.end, t) - r.start;
+  }
+  return Math.max(0, t - removed);
+}
+
 /** The enabled cut covering time t (or word overlapping), if any. */
 export function enabledCutAt(cuts: EditorCut[], t: number): EditorCut | undefined {
   return cuts.find((c) => c.enabled && t >= c.start && t < c.end);
