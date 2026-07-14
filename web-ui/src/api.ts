@@ -1,4 +1,4 @@
-import type { Cut } from "./types";
+import type { Cut, CutPlan } from "./types";
 
 export interface SessionInfo {
   id: string;
@@ -74,6 +74,15 @@ export async function pickFile(): Promise<{ path?: string; cancelled?: boolean; 
   return (await res.json()) as { path?: string; cancelled?: boolean; available?: boolean };
 }
 
+/** Error carrying an optional server-provided fix hint (install command, etc). */
+export class ApiError extends Error {
+  hint?: string;
+  constructor(message: string, hint?: string) {
+    super(message);
+    if (hint) this.hint = hint;
+  }
+}
+
 /** Validate + open a path server-side, creating a session. Throws on invalid path. */
 export async function openPath(path: string): Promise<SessionInfo> {
   const res = await fetch("/api/open", {
@@ -81,9 +90,21 @@ export async function openPath(path: string): Promise<SessionInfo> {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ path }),
   });
-  const data = (await res.json()) as { session?: SessionInfo; error?: string };
-  if (!res.ok || !data.session) throw new Error(data.error ?? `open failed: ${res.status}`);
+  const data = (await res.json()) as { session?: SessionInfo; error?: string; hint?: string };
+  if (!res.ok || !data.session) {
+    throw new ApiError(data.error ?? `open failed: ${res.status}`, data.hint);
+  }
   return data.session;
+}
+
+/** Fetch the cached waveform peaks (0..1) for a session's source audio. */
+export async function getWaveform(
+  sessionId: string,
+): Promise<{ peaks: number[]; duration: number }> {
+  const res = await fetch(`/api/waveform?session=${encodeURIComponent(sessionId)}`);
+  const data = (await res.json()) as { peaks?: number[]; duration?: number; error?: string };
+  if (!res.ok || !data.peaks) throw new Error(data.error ?? `waveform failed: ${res.status}`);
+  return { peaks: data.peaks, duration: data.duration ?? 0 };
 }
 
 /** URL for the <video> element of a given session (source, or rendered output). */
@@ -95,7 +116,8 @@ export function mediaUrl(sessionId: string, variant?: "rendered"): string {
 export interface SSEHandlers {
   onProgress?: (stage: string, detail?: string) => void;
   onResult?: (data: unknown) => void;
-  onError?: (message: string) => void;
+  /** `hint` is the server's fix suggestion for known failures (P3-2) */
+  onError?: (message: string, hint?: string) => void;
 }
 
 /**
@@ -132,7 +154,10 @@ export async function streamSSE(
     } else if (event === "result") {
       handlers.onResult?.(parsed);
     } else if (event === "error") {
-      handlers.onError?.(String(parsed.message ?? "unknown error"));
+      handlers.onError?.(
+        String(parsed.message ?? "unknown error"),
+        typeof parsed.hint === "string" ? parsed.hint : undefined,
+      );
     }
   };
 
@@ -168,4 +193,32 @@ export interface RenderPayload {
   cuts: Cut[];
   burn: boolean;
   embed: boolean;
+}
+
+/** Plan-only knobs for the cheap re-plan (no whisper / ffmpeg). */
+export interface PlanPayload {
+  sessionId: string;
+  mode: string;
+  minSilence: number;
+  maxPause: number;
+  maxCutPerSilence: number;
+  minKeep: number;
+  padding: number;
+  fillers: boolean;
+  fillerWords?: string[];
+}
+
+/**
+ * Cheap re-plan: reshape the cut list server-side from cached analysis
+ * artifacts. Fast, so it's a plain JSON round-trip (no progress stream).
+ */
+export async function postPlan(payload: PlanPayload): Promise<{ plan: CutPlan }> {
+  const res = await fetch("/api/plan", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = (await res.json()) as { plan?: CutPlan; error?: string };
+  if (!res.ok || !data.plan) throw new Error(data.error ?? `plan failed: ${res.status}`);
+  return { plan: data.plan };
 }

@@ -117,6 +117,11 @@ export function freezeKey(identity: string, p: { noise: number; minDuration: num
   return `freeze-${identity}-${paramHash({ noise: p.noise, minDuration: p.minDuration })}`;
 }
 
+/** Waveform peaks depend only on the file identity + bucket count. */
+export function waveformKey(identity: string, p: { buckets: number }): string {
+  return `waveform-${identity}-${paramHash({ buckets: p.buckets })}`;
+}
+
 // ---- eviction (pure) --------------------------------------------------------
 
 export interface EvictionEntry {

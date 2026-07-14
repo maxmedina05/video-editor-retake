@@ -1,4 +1,4 @@
-export type CutReason = "silence" | "filler" | "false-start" | "ramble" | "manual";
+export type CutReason = "silence" | "filler" | "false-start" | "ramble" | "manual" | "trim";
 
 export type GapActivity = "static" | "active";
 

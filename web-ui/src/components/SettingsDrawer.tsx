@@ -23,12 +23,19 @@ const MODES: { key: Mode; label: string }[] = [
   { key: "aggressive", label: "Aggressive" },
 ];
 
-const NUM_FIELDS: { key: keyof Settings; label: string; step: number; min: number }[] = [
-  { key: "minSilence", label: "Min silence (s)", step: 0.1, min: 0 },
+type NumField = { key: keyof Settings; label: string; step: number; min: number };
+
+/** Plan-only knobs — editing these re-plans instantly (no progress modal). */
+const INSTANT_FIELDS: NumField[] = [
   { key: "maxPause", label: "Max pause left (s)", step: 0.05, min: 0 },
   { key: "maxCutPerSilence", label: "Max cut per silence (s, 0 = uncapped)", step: 0.5, min: 0 },
   { key: "minKeep", label: "Min keep / anti-flicker (s)", step: 0.05, min: 0 },
   { key: "padding", label: "Padding (s)", step: 0.05, min: 0 },
+];
+
+/** Detection knobs — changing these needs a full Re-analyze. */
+const REANALYZE_FIELDS: NumField[] = [
+  { key: "minSilence", label: "Min silence (s)", step: 0.1, min: 0 },
   { key: "threshold", label: "Silence threshold (dB)", step: 1, min: -90 },
 ];
 
@@ -65,6 +72,26 @@ export default function SettingsDrawer({
   const ovrTag = (key: keyof Settings) =>
     overrides.has(key) ? <span className="ovr-tag">overridden</span> : null;
 
+  const renderNum = (f: NumField) => (
+    <label key={f.key} className="field">
+      <span>
+        {f.label} {ovrTag(f.key)}
+      </span>
+      <input
+        type="number"
+        inputMode="decimal"
+        step={f.step}
+        min={f.min}
+        data-testid={`field-${f.key}`}
+        value={settings[f.key] as number}
+        onChange={(e) => {
+          const n = parseDecimal(e.target.value);
+          if (n !== null) onChange({ [f.key]: n } as Partial<Settings>);
+        }}
+      />
+    </label>
+  );
+
   return (
     <aside className={`drawer ${open ? "open" : ""}`} data-testid="settings-drawer">
       <div className="drawer-head">
@@ -90,7 +117,7 @@ export default function SettingsDrawer({
           </select>
         </label>
         <p className="hint" data-testid="mode-blurb">
-          {MODE_BLURB[settings.mode]}
+          {MODE_BLURB[settings.mode]} · applies instantly
         </p>
 
         <details
@@ -116,39 +143,12 @@ export default function SettingsDrawer({
               </button>
             )}
 
-            {NUM_FIELDS.map((f) => (
-              <label key={f.key} className="field">
-                <span>
-                  {f.label} {ovrTag(f.key)}
-                </span>
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  step={f.step}
-                  min={f.min}
-                  data-testid={`field-${f.key}`}
-                  value={settings[f.key] as number}
-                  onChange={(e) => {
-                    const n = parseDecimal(e.target.value);
-                    if (n !== null) onChange({ [f.key]: n } as Partial<Settings>);
-                  }}
-                />
-              </label>
-            ))}
+            <p className="group-head" data-testid="instant-group">
+              Applies instantly
+              <span className="group-sub">reshapes the plan — no re-analyze</span>
+            </p>
 
-            <label className="field">
-              <span>Whisper model {ovrTag("model")}</span>
-              <select
-                value={settings.model}
-                onChange={(e) => onChange({ model: e.target.value })}
-              >
-                {MODELS.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {INSTANT_FIELDS.map(renderNum)}
 
             <label className="field">
               <span>Filler words (comma-separated) {ovrTag("fillerWords")}</span>
@@ -167,6 +167,27 @@ export default function SettingsDrawer({
                 onChange={(e) => onChange({ fillers: e.target.checked })}
               />
               <span>Remove filler words {ovrTag("fillers")}</span>
+            </label>
+
+            <p className="group-head" data-testid="reanalyze-group">
+              Needs re-analysis
+              <span className="group-sub">re-runs detection — click Re-analyze below</span>
+            </p>
+
+            {REANALYZE_FIELDS.map(renderNum)}
+
+            <label className="field">
+              <span>Whisper model {ovrTag("model")}</span>
+              <select
+                value={settings.model}
+                onChange={(e) => onChange({ model: e.target.value })}
+              >
+                {MODELS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
             </label>
 
             <label className="field-row">

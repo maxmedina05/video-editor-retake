@@ -75,9 +75,17 @@ export const runBinary: Runner = async (file, args, opts) => {
     all: false,
     encoding: "utf8",
   });
+  let stderr = typeof result.stderr === "string" ? result.stderr : "";
+  // A binary that never spawned (e.g. missing: ENOENT) has no exit code and no
+  // stderr; surface execa's short message so callers can say WHY it failed
+  // ("spawn ffmpeg ENOENT") instead of "unknown error".
+  if (result.exitCode === undefined && !stderr) {
+    const r = result as { shortMessage?: string; message?: string };
+    stderr = r.shortMessage ?? r.message ?? "";
+  }
   return {
     stdout: typeof result.stdout === "string" ? result.stdout : "",
-    stderr: typeof result.stderr === "string" ? result.stderr : "",
+    stderr,
     exitCode: result.exitCode ?? 1,
   };
 };

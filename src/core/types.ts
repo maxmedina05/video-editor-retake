@@ -26,7 +26,7 @@ export interface Span {
   end: number;
 }
 
-export type CutReason = "silence" | "filler" | "false-start" | "ramble" | "manual";
+export type CutReason = "silence" | "filler" | "false-start" | "ramble" | "manual" | "trim";
 
 /** Whether a silence gap sits over frozen (static) or moving (active) video. */
 export type GapActivity = "static" | "active";

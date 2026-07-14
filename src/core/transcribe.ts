@@ -147,9 +147,12 @@ export async function transcribe(
 
     const res = await runner("whisper-cli", args);
     if (res.exitCode !== 0) {
-      const hint = res.stderr.includes("failed to load")
-        ? `\nModel not found at ${modelPath}. See README for how to download it.`
-        : "";
+      // whisper.cpp says "failed to open '<path>'" for a missing model file and
+      // "failed to load model" for a corrupt one — both mean: get the model.
+      const hint =
+        res.stderr.includes("failed to load") || res.stderr.includes("failed to open")
+          ? `\nModel not found at ${modelPath}. See README for how to download it.`
+          : "";
       throw new Error(`whisper-cli failed: ${res.stderr.trim() || "unknown error"}${hint}`);
     }
 

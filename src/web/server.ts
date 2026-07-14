@@ -5,6 +5,7 @@ import { basename, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { analyze, cleanup, finalize, type AnalyzeResult } from "../core/pipeline.js";
 import { planFromCuts } from "../core/cutlist.js";
+import { rebuildPlan } from "../core/replan.js";
 import { hasFfmpegFilter } from "../core/render.js";
 import { validateVideoPath } from "../core/openfile.js";
 import { createSessionRegistry, type Session } from "../core/sessions.js";
@@ -18,6 +19,9 @@ import {
 import { detectPicker, pickVideo, type PickerKind } from "./pick.js";
 import { browse, BrowseError } from "./browse.js";
 import { modeDefaults, type Mode } from "../core/modes.js";
+import { mapError } from "../core/errors.js";
+import { cacheDir, createCache, fileIdentity, waveformKey } from "../core/cache.js";
+import { extractWaveformPeaks, WAVEFORM_BUCKETS } from "../core/waveform.js";
 import type { DenoiseMethod } from "../core/denoise.js";
 import type { Cut } from "../core/types.js";
 
@@ -83,6 +87,20 @@ function sseInit(res: ServerResponse): void {
 
 function sseSend(res: ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+/**
+ * Send an SSE error event with the raw error mapped to a human message + fix
+ * hint (P3-2). The raw text rides along for anyone who needs the gory detail.
+ */
+function sseError(res: ServerResponse, err: unknown): void {
+  const raw = err instanceof Error ? err.message : String(err);
+  const friendly = mapError(raw);
+  sseSend(res, "error", {
+    message: friendly.message,
+    ...(friendly.hint ? { hint: friendly.hint } : {}),
+    ...(friendly.message !== raw ? { raw } : {}),
+  });
 }
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
@@ -178,10 +196,62 @@ async function handleAnalyze(
       cache: result.cache,
     });
   } catch (err) {
-    sseSend(res, "error", { message: err instanceof Error ? err.message : String(err) });
+    sseError(res, err);
   } finally {
     res.end();
   }
+}
+
+interface PlanBody {
+  sessionId?: string;
+  mode?: Mode;
+  /** filter floor on the cached silence gaps (drop gaps shorter than this) */
+  minSilence?: number;
+  maxPause?: number;
+  maxCutPerSilence?: number;
+  minKeep?: number;
+  padding?: number;
+  fillers?: boolean;
+  fillerWords?: string[];
+}
+
+/**
+ * Cheap re-plan: reshape the cut list from the session's CACHED analysis
+ * artifacts (transcript + silence/freeze detections) with new plan-only knobs.
+ * Never re-runs whisper or ffmpeg — it is a pure recompute, so it responds with
+ * plain JSON (no progress stream). Changes that invalidate detection
+ * (threshold, min-silence-below-analyze, model, smart, fresh) still go through
+ * /api/analyze.
+ */
+function handlePlan(res: ServerResponse, aState: AnalysisState, body: PlanBody): void {
+  if (!aState.result) {
+    sendJson(res, 409, { error: "no analysis yet; run /api/analyze first" });
+    return;
+  }
+  const minKeep = body.minKeep ?? aState.lastMinKeep;
+  // Keep lastMinKeep in sync so a subsequent /api/render rebuilds keep-segments
+  // with the same anti-flicker floor the user just previewed.
+  aState.lastMinKeep = minKeep;
+  const { info, transcript, silenceGaps, frozenSpans } = aState.result;
+  const plan = rebuildPlan(
+    {
+      sourceDuration: info.duration,
+      words: transcript.words,
+      silenceGaps,
+      frozenSpans,
+    },
+    {
+      mode: body.mode ?? "balanced",
+      ...(body.minSilence !== undefined ? { minSilence: body.minSilence } : {}),
+      ...(body.maxPause !== undefined ? { maxPause: body.maxPause } : {}),
+      ...(body.maxCutPerSilence !== undefined ? { maxCutPerSilence: body.maxCutPerSilence } : {}),
+      minKeep,
+      ...(body.padding !== undefined ? { padding: body.padding } : {}),
+      ...(body.fillers !== undefined ? { fillers: body.fillers } : {}),
+      ...(body.fillerWords ? { fillerWords: body.fillerWords } : {}),
+    },
+  );
+  sendJson(res, 200, { plan });
 }
 
 interface RenderBody {
@@ -251,7 +321,7 @@ async function handleRender(
       cues,
     });
   } catch (err) {
-    sseSend(res, "error", { message: err instanceof Error ? err.message : String(err) });
+    sseError(res, err);
   } finally {
     res.end();
   }
@@ -346,6 +416,8 @@ export async function startServer(
   const mediaRoot = opts.mediaRoot ? resolve(opts.mediaRoot) : undefined;
   const sessions = createSessionRegistry();
   const analysisState = new Map<string, AnalysisState>();
+  /** sessionId → waveform peaks (memo over the per-identity disk artifact) */
+  const waveforms = new Map<string, number[]>();
   let recents = await loadRecents();
   const hasSubtitlesFilter = await hasFfmpegFilter("subtitles").catch(() => false);
   const picker: PickerKind | null = await detectPicker().catch(() => null);
@@ -439,8 +511,10 @@ export async function startServer(
           const session = await openPath(body.path);
           return sendJson(res, 200, { session: sessionDto(session) });
         } catch (err) {
+          const friendly = mapError(err instanceof Error ? err.message : String(err));
           return sendJson(res, 400, {
-            error: err instanceof Error ? err.message : String(err),
+            error: friendly.message,
+            ...(friendly.hint ? { hint: friendly.hint } : {}),
           });
         }
       }
@@ -453,12 +527,55 @@ export async function startServer(
         return handleAnalyze(req, res, session, aState, hasSubtitlesFilter, body);
       }
 
+      if (path === "/api/plan" && method === "POST") {
+        const body = (await readBody(req)) as PlanBody;
+        const session = body.sessionId ? sessions.get(body.sessionId) : undefined;
+        if (!session) return sendJson(res, 404, { error: "unknown session" });
+        const aState = analysisState.get(session.id)!;
+        return handlePlan(res, aState, body);
+      }
+
       if (path === "/api/render" && method === "POST") {
         const body = (await readBody(req)) as RenderBody;
         const session = body.sessionId ? sessions.get(body.sessionId) : undefined;
         if (!session) return sendJson(res, 404, { error: "unknown session" });
         const aState = analysisState.get(session.id)!;
         return handleRender(res, session, aState, hasSubtitlesFilter, body);
+      }
+
+      if (path === "/api/waveform" && method === "GET") {
+        const session = sessions.get(url.searchParams.get("session") ?? "");
+        if (!session) return sendJson(res, 404, { error: "unknown session" });
+        const cached = waveforms.get(session.id);
+        if (cached) {
+          return sendJson(res, 200, { peaks: cached, duration: session.mediaInfo.duration });
+        }
+        try {
+          // Per-identity disk artifact, like the other analysis passes: computed
+          // once per file (not per open), instant on every reopen.
+          const cache = createCache(cacheDir());
+          const st = await stat(session.path);
+          const identity = fileIdentity({
+            path: session.path,
+            size: st.size,
+            mtimeMs: st.mtimeMs,
+          });
+          const key = waveformKey(identity, { buckets: WAVEFORM_BUCKETS });
+          const hit = await cache.readJson<number[]>(key);
+          let peaks = hit.kind === "hit" ? hit.value : null;
+          if (!peaks) {
+            peaks = await extractWaveformPeaks(session.path);
+            await cache.writeJson(key, peaks).catch(() => {});
+          }
+          waveforms.set(session.id, peaks);
+          return sendJson(res, 200, { peaks, duration: session.mediaInfo.duration });
+        } catch (err) {
+          const friendly = mapError(err instanceof Error ? err.message : String(err));
+          return sendJson(res, 500, {
+            error: friendly.message,
+            ...(friendly.hint ? { hint: friendly.hint } : {}),
+          });
+        }
       }
 
       if (path === "/api/media" && method === "GET") {

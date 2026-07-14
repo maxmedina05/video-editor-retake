@@ -206,13 +206,24 @@ body {
 
 .main {
   flex: 1;
-  max-width: 1080px;
+  max-width: 1440px;
   width: 100%;
   margin: 0 auto;
-  padding: 20px;
+  padding: 16px 20px;
+}
+
+/* Editor layout: player+timeline+transcript on the left, cuts panel docked right. */
+.editor-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+.stage {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
+  min-width: 0;
 }
 
 .player {
@@ -285,29 +296,38 @@ body {
 }
 .timeline-bar {
   position: relative;
-  height: 34px;
+  height: 46px;
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 8px;
   cursor: pointer;
   overflow: hidden;
 }
+/* waveform canvas sits behind the cut regions (P2-4) */
+.waveform {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
 .region {
   position: absolute;
   top: 0;
   bottom: 0;
   min-width: 2px;
-  opacity: 0.85;
+  opacity: 0.72;
   cursor: pointer;
   border-left: 1px solid rgba(0, 0, 0, 0.3);
   border-right: 1px solid rgba(0, 0, 0, 0.3);
 }
+/* "off" (kept) regions stay reason-colored but dimmed + hatched (P3-5) */
 .region.off {
-  opacity: 0.22;
+  opacity: 0.38;
   background-image: repeating-linear-gradient(
     45deg,
-    rgba(255, 255, 255, 0.25) 0,
-    rgba(255, 255, 255, 0.25) 2px,
+    rgba(0, 0, 0, 0.45) 0,
+    rgba(0, 0, 0, 0.45) 2px,
     transparent 2px,
     transparent 5px
   );
@@ -324,6 +344,39 @@ body {
   box-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
   pointer-events: none;
 }
+
+/* ---- head/tail trim handles (P2-6) ---- */
+.trim-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  margin-left: -6px; /* center on the trim boundary */
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 3;
+}
+.trim-handle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 4px;
+  width: 4px;
+  border-radius: 2px;
+  background: var(--muted);
+  border: 1px solid rgba(0, 0, 0, 0.5);
+}
+.trim-handle:hover::after,
+.trim-handle.active::after {
+  background: #46c08d; /* trim reason color */
+}
+.trim-handle.head {
+  margin-left: -2px;
+}
+.trim-handle.tail {
+  margin-left: -10px;
+}
 .timeline-labels {
   display: flex;
   justify-content: space-between;
@@ -336,7 +389,7 @@ body {
   gap: 16px;
   flex-wrap: wrap;
   font-size: 12px;
-  color: var(--muted);
+  color: #aab6c8; /* brighter than --muted so the legend is scannable (P3-5) */
 }
 .legend-item {
   display: inline-flex;
@@ -688,4 +741,332 @@ body {
 }
 .recent-remove:hover {
   color: var(--err);
+}
+
+/* ---- compact status strip (replaces stacked cache + stats banners) ---- */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 20px;
+  font-size: 13px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.statusbar .hi {
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.statusbar .pill {
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 12px;
+}
+.chip {
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: rgba(91, 100, 114, 0.22);
+  color: var(--muted);
+}
+.chip.ok {
+  background: rgba(63, 178, 127, 0.18);
+  color: var(--ok);
+}
+.chip.busy {
+  background: rgba(63, 167, 214, 0.18);
+  color: var(--accent-strong);
+}
+
+/* ---- render options in the top bar ---- */
+.render-opts {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+/* slim render-result bar + collapsed file paths */
+.banner.ok.slim {
+  padding: 8px 20px;
+}
+.render-files-details {
+  width: 100%;
+}
+.render-files-details summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* keyboard hint under the timeline */
+.legend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.kbd-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.kbd-hint kbd {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+/* ---- settings: instant vs re-analysis group headers ---- */
+.group-head {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.group-head .group-sub {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* ---- Cuts panel ---- */
+.cuts-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 140px);
+  position: sticky;
+  top: 84px;
+  overflow: hidden;
+}
+.cuts-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.cuts-head h2 {
+  margin: 0;
+  font-size: 15px;
+  margin-right: auto;
+}
+.cuts-count {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 400;
+}
+.cuts-bulk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cuts-empty {
+  padding: 16px 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.cuts-close {
+  display: none;
+}
+.cuts-scroll {
+  overflow-y: auto;
+  padding: 8px;
+}
+.cut-group {
+  margin-bottom: 10px;
+}
+.cut-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px;
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
+  border-bottom: 1px solid var(--line);
+}
+.reason-chip {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+.cut-group-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cut-group-meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cut-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.cut-row:hover {
+  background: var(--panel-2);
+}
+.cut-row.selected {
+  background: rgba(63, 167, 214, 0.18);
+  outline: 1px solid var(--accent);
+}
+.cut-row.kept {
+  opacity: 0.5;
+}
+.cut-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--muted);
+  flex: none;
+  width: 52px;
+}
+.cut-dur {
+  font-size: 11px;
+  color: var(--accent-strong);
+  flex: none;
+  width: 44px;
+}
+.cut-snippet {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.cut-play {
+  flex: none;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.cut-play:hover {
+  border-color: var(--accent);
+}
+.cuts-toggle {
+  display: none;
+}
+
+/* ---- undo/redo (P3-4) ---- */
+.undo-group {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* ---- error banner fix hints (P3-2) ---- */
+.error-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 12px;
+}
+.error-hint code {
+  user-select: all; /* one click selects the whole install command */
+}
+
+/* ---- home: drag-drop + hero (P3-3 / P3-6) ---- */
+.home.drag-over .open-panel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(63, 167, 214, 0.35);
+}
+.banner.info.drop-hint {
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(63, 167, 214, 0.4);
+}
+.banner.info.drop-hint span {
+  flex: 1;
+}
+.home-hero {
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 18px 20px;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.home-hero p {
+  margin: 0 0 10px;
+  color: var(--text);
+}
+.home-hero-methods {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.home-hero-methods strong {
+  color: var(--text);
+}
+
+/* ---- narrow: cuts panel becomes a right-side drawer ---- */
+@media (max-width: 900px) {
+  .editor-body {
+    grid-template-columns: 1fr;
+  }
+  .cuts-toggle {
+    display: inline-flex;
+  }
+  .render-opts {
+    display: none;
+  }
+  .cuts-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100%;
+    max-height: none;
+    width: 340px;
+    max-width: 90vw;
+    border-radius: 0;
+    border-left: 1px solid var(--line);
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    z-index: 30;
+  }
+  .cuts-panel.open {
+    transform: translateX(0);
+  }
+  .cuts-close {
+    display: inline-block;
+  }
 }
