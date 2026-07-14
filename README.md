@@ -371,7 +371,7 @@ pinned port and just open `http://127.0.0.1:5199` whenever you need it. Use
 
 ### macOS (launchd)
 
-Save as `~/Library/LaunchAgents/io.cobalt.clean-video.plist`:
+Save as `~/Library/LaunchAgents/dev.clean-video.app.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -380,7 +380,7 @@ Save as `~/Library/LaunchAgents/io.cobalt.clean-video.plist`:
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>io.cobalt.clean-video</string>
+  <string>dev.clean-video.app</string>
   <key>ProgramArguments</key>
   <array>
     <string>/usr/local/bin/node</string>
@@ -407,8 +407,8 @@ Save as `~/Library/LaunchAgents/io.cobalt.clean-video.plist`:
 Install / enable / stop:
 
 ```bash
-launchctl load -w ~/Library/LaunchAgents/io.cobalt.clean-video.plist   # start now + at login
-launchctl unload -w ~/Library/LaunchAgents/io.cobalt.clean-video.plist # stop + disable
+launchctl load -w ~/Library/LaunchAgents/dev.clean-video.app.plist   # start now + at login
+launchctl unload -w ~/Library/LaunchAgents/dev.clean-video.app.plist # stop + disable
 ```
 
 `launchd` uses a minimal `PATH`, so ffmpeg/whisper-cli may not be found. If so,
