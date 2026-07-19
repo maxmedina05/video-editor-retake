@@ -337,13 +337,19 @@ docker run --rm \
 
 Then open <http://127.0.0.1:5199>.
 
-Or with compose (`docker compose up --build`) — see `docker-compose.yml`.
+Or with compose (`docker compose up --build`) — see `docker-compose.yml`. It
+mounts `./sample-videos` by default; point `MEDIA_DIR` at your own directory to
+use real footage:
+
+```bash
+MEDIA_DIR=/home/you/Videos docker compose up --build
+```
 
 **What's mounted where**
 
 | Mount | Purpose |
 | --- | --- |
-| `/videos` | Your videos. Browsed via the in-app file browser; rendered `*.cleaned.mp4` / `.srt` / `.vtt` land here too, so mount it **read-write** (add `:ro` only if you just want to analyze, not render). |
+| `/videos` | Your videos (compose: `MEDIA_DIR`). Only what you mount here is visible — host paths outside it don't exist inside the container. Browsed via the in-app file browser; rendered `*.cleaned.mp4` / `.srt` / `.vtt` land here too, so mount it **read-write** (add `:ro` only if you just want to analyze, not render). |
 | `/models` | Whisper models. Persist this so the first-run download happens once. |
 | `/config` | Recents / preferences (`XDG_CONFIG_HOME`). |
 | `/cache` | Analysis cache (`XDG_CACHE_HOME`). Persist this so reopening a file skips the slow re-analyze. WAVs are LRU-capped (~2GB, `CLEAN_VIDEO_CACHE_MAX_BYTES`). |

@@ -208,6 +208,29 @@ export interface PlanPayload {
   fillerWords?: string[];
 }
 
+export interface CaptionsResult {
+  srt: string;
+  vtt: string;
+  cueCount: number;
+}
+
+/**
+ * Subtitles-only: write .srt/.vtt for the original video from the cached
+ * transcript, skipping the ffmpeg render. Plain JSON (no progress stream).
+ */
+export async function postCaptions(sessionId: string): Promise<CaptionsResult> {
+  const res = await fetch("/api/captions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ sessionId }),
+  });
+  const data = (await res.json()) as Partial<CaptionsResult> & { error?: string; hint?: string };
+  if (!res.ok || !data.srt || !data.vtt) {
+    throw new ApiError(data.error ?? `captions failed: ${res.status}`, data.hint);
+  }
+  return { srt: data.srt, vtt: data.vtt, cueCount: data.cueCount ?? 0 };
+}
+
 /**
  * Cheap re-plan: reshape the cut list server-side from cached analysis
  * artifacts. Fast, so it's a plain JSON round-trip (no progress stream).

@@ -1,9 +1,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createReadStream, existsSync } from "node:fs";
-import { stat, readFile } from "node:fs/promises";
+import { stat, readFile, writeFile } from "node:fs/promises";
 import { basename, extname, join, normalize, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { analyze, cleanup, finalize, type AnalyzeResult } from "../core/pipeline.js";
+import { generateCaptions } from "../core/captions.js";
 import { planFromCuts } from "../core/cutlist.js";
 import { rebuildPlan } from "../core/replan.js";
 import { hasFfmpegFilter } from "../core/render.js";
@@ -327,6 +328,50 @@ async function handleRender(
   }
 }
 
+interface CaptionsBody {
+  sessionId?: string;
+}
+
+/**
+ * Subtitles-only: write `.srt`/`.vtt` for the ORIGINAL (untouched) video from
+ * the cached transcript — no cuts, no ffmpeg render. Captions map 1:1 to the
+ * source timeline (keep = whole video), so they load against the file the user
+ * already has. Cheap pure recompute → plain JSON, no progress stream.
+ */
+async function handleCaptions(
+  res: ServerResponse,
+  session: Session,
+  aState: AnalysisState,
+): Promise<void> {
+  if (!aState.result) {
+    sendJson(res, 409, { error: "no analysis yet; run /api/analyze first" });
+    return;
+  }
+  const { info, transcript } = aState.result;
+  // Whole-video keep = original timeline; remapWords becomes a 1:1 pass-through.
+  const keep = [{ start: 0, end: info.duration }];
+  const { srt, vtt, cues } = generateCaptions(transcript.words, keep);
+
+  const ext = extname(session.path);
+  const name = basename(session.path, ext);
+  const dir = resolve(session.path, "..");
+  // Deliberately NOT `.cleaned.srt` — these belong to the source video, not a
+  // rendered cut, so they never collide with a later render's sidecars.
+  const srtPath = join(dir, `${name}.srt`);
+  const vttPath = join(dir, `${name}.vtt`);
+  try {
+    await writeFile(srtPath, srt, "utf8");
+    await writeFile(vttPath, vtt, "utf8");
+  } catch (err) {
+    const friendly = mapError(err instanceof Error ? err.message : String(err));
+    return sendJson(res, 500, {
+      error: friendly.message,
+      ...(friendly.hint ? { hint: friendly.hint } : {}),
+    });
+  }
+  sendJson(res, 200, { srt: srtPath, vtt: vttPath, cueCount: cues.length });
+}
+
 async function streamFile(
   req: IncomingMessage,
   res: ServerResponse,
@@ -541,6 +586,14 @@ export async function startServer(
         if (!session) return sendJson(res, 404, { error: "unknown session" });
         const aState = analysisState.get(session.id)!;
         return handleRender(res, session, aState, hasSubtitlesFilter, body);
+      }
+
+      if (path === "/api/captions" && method === "POST") {
+        const body = (await readBody(req)) as CaptionsBody;
+        const session = body.sessionId ? sessions.get(body.sessionId) : undefined;
+        if (!session) return sendJson(res, 404, { error: "unknown session" });
+        const aState = analysisState.get(session.id)!;
+        return handleCaptions(res, session, aState);
       }
 
       if (path === "/api/waveform" && method === "GET") {

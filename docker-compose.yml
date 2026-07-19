@@ -12,9 +12,12 @@ services:
       - "127.0.0.1:5199:5199"
     volumes:
       # Your videos. Browsed via the in-app file browser (--media-root /videos).
+      # Only what is mounted here is reachable; host paths outside it do not
+      # exist inside the container. Point MEDIA_DIR at your own directory:
+      #   MEDIA_DIR=/home/you/Videos docker compose up
       # Read-write: rendered *.cleaned.mp4 / .srt / .vtt are written alongside
       # the source. Append :ro if you only want to analyze, not render.
-      - ./sample-videos:/videos
+      - ${MEDIA_DIR:-./sample-videos}:/videos
       # Whisper models — persisted so the first-run download happens once.
       - clean-video-models:/models
       # Recents / config (XDG_CONFIG_HOME=/config inside the container).

@@ -4,7 +4,16 @@ import Timeline from "./Timeline";
 import Transcript from "./Transcript";
 import CutsPanel from "./CutsPanel";
 import SettingsDrawer from "./SettingsDrawer";
-import { getWaveform, mediaUrl, postPlan, streamSSE, type SessionInfo } from "../api";
+import {
+  ApiError,
+  getWaveform,
+  mediaUrl,
+  postCaptions,
+  postPlan,
+  streamSSE,
+  type CaptionsResult,
+  type SessionInfo,
+} from "../api";
 import { ALL_REASONS, REASON_COLOR, REASON_LABEL } from "../reasons";
 import { clock, mergedEnabledRanges } from "../util";
 import { editVtt, resultVtt } from "../captions";
@@ -154,6 +163,8 @@ export default function Editor({ session, initialHasSubtitlesFilter, onHome }: P
   const [rendering, setRendering] = useState(false);
   const [renderStage, setRenderStage] = useState("");
   const [renderResult, setRenderResult] = useState<RenderResult | null>(null);
+  const [captioning, setCaptioning] = useState(false);
+  const [captionResult, setCaptionResult] = useState<CaptionsResult | null>(null);
 
   // True once the first analyze has produced artifacts server-side; gates the
   // live re-plan so it never fires before there is anything to re-plan.
@@ -192,6 +203,7 @@ export default function Editor({ session, initialHasSubtitlesFilter, onHome }: P
     setAnalyzing(true);
     setError(null);
     setRenderResult(null);
+    setCaptionResult(null);
     setWatchingResult(false);
     setStage("starting");
     const fillerWords = settings.fillerWords
@@ -511,6 +523,22 @@ export default function Editor({ session, initialHasSubtitlesFilter, onHome }: P
     }
   }, [cuts, burn, embed, hasSubtitlesFilter, session.id]);
 
+  // Subtitles-only: write .srt/.vtt for the ORIGINAL video (no cuts, no render).
+  const runCaptions = useCallback(async () => {
+    setCaptioning(true);
+    setError(null);
+    setCaptionResult(null);
+    try {
+      const result = await postCaptions(session.id);
+      setCaptionResult(result);
+    } catch (e) {
+      const hint = e instanceof ApiError ? e.hint : undefined;
+      setError({ message: e instanceof Error ? e.message : String(e), ...(hint ? { hint } : {}) });
+    } finally {
+      setCaptioning(false);
+    }
+  }, [session.id]);
+
   const enabledCount = cuts.filter((c) => c.enabled).length;
 
   // Cache provenance summary for the compact status strip.
@@ -622,6 +650,15 @@ export default function Editor({ session, initialHasSubtitlesFilter, onHome }: P
                 Settings
               </button>
               <button
+                className="btn"
+                data-testid="captions-btn"
+                disabled={captioning || rendering || analyzing || replanning || words.length === 0}
+                onClick={runCaptions}
+                title="Write .srt/.vtt for the original video — no cuts, no re-encode"
+              >
+                {captioning ? "Subtitles…" : "Subtitles only"}
+              </button>
+              <button
                 className="btn primary"
                 data-testid="render-btn"
                 disabled={rendering || analyzing || replanning || enabledCount === 0}
@@ -731,6 +768,24 @@ export default function Editor({ session, initialHasSubtitlesFilter, onHome }: P
               <code>{renderResult.video}</code>
               <code>{renderResult.srt}</code>
               <code>{renderResult.vtt}</code>
+            </div>
+          </details>
+        </div>
+      )}
+
+      {captionResult && (
+        <div className="banner ok slim" data-testid="captions-result">
+          <div className="render-done-row">
+            <span>
+              Wrote {captionResult.cueCount} subtitle cues for the original video (no
+              cuts, no re-encode).
+            </span>
+          </div>
+          <details className="render-files-details">
+            <summary>Output files</summary>
+            <div className="render-files">
+              <code>{captionResult.srt}</code>
+              <code>{captionResult.vtt}</code>
             </div>
           </details>
         </div>
